@@ -21,7 +21,6 @@ import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplate
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_SIZE_GB;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.IMAGE;
-import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.NETWORK_NAME;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.ZONE;
 import static com.cloudera.director.google.compute.GoogleComputeProviderConfigurationProperty.REGION;
@@ -96,7 +95,7 @@ public class GoogleComputeProviderTest {
   private static final String IMAGE_URL_UBUNTU =
       "https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/ubuntu-1404-trusty-v20150805";
   private static final String MACHINE_TYPE_NAME = "n1-standard-1";
-  private static final String NETWORK_NAME_VALUE = "some-network";
+  private static final String NETWORK_URL_VALUE = "some-network";
   private static final String INVALID_INSTANCE_NAME_PREFIX = "-starts-with-dash";
 
   private GoogleComputeProvider computeProvider;
@@ -222,7 +221,6 @@ public class GoogleComputeProviderTest {
     Map<String, String> templateConfig = new HashMap<String, String>();
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_ALIAS_RHEL);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
 
     // Create the resource template.
@@ -279,7 +277,6 @@ public class GoogleComputeProviderTest {
     templateConfig.put(BOOT_DISK_TYPE.unwrap().getConfigKey(), "Standard");
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_ALIAS_RHEL);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
 
     // Create the resource template.
@@ -335,7 +332,6 @@ public class GoogleComputeProviderTest {
     Map<String, String> templateConfig = new HashMap<String, String>();
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_URL_UBUNTU);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
 
     // Create the resource template.
@@ -390,7 +386,6 @@ public class GoogleComputeProviderTest {
     Map<String, String> templateConfig = new HashMap<String, String>();
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_ALIAS_RHEL);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
 
     // Create the resource template.
@@ -521,7 +516,6 @@ public class GoogleComputeProviderTest {
     Map<String, String> templateConfig = new HashMap<String, String>();
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_ALIAS_RHEL);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
 
     // Create the resource template.
@@ -618,7 +612,6 @@ public class GoogleComputeProviderTest {
     Map<String, String> templateConfig = new HashMap<String, String>();
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_ALIAS_RHEL);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
     templateConfig.put(DATA_DISK_COUNT.unwrap().getConfigKey(), "1");
     templateConfig.put(DATA_DISK_TYPE.unwrap().getConfigKey(), "Standard");
@@ -696,7 +689,6 @@ public class GoogleComputeProviderTest {
     Map<String, String> templateConfig = new HashMap<String, String>();
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_ALIAS_RHEL);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
     templateConfig.put(DATA_DISK_COUNT.unwrap().getConfigKey(), "1");
     templateConfig.put(DATA_DISK_TYPE.unwrap().getConfigKey(), "SSD");
@@ -888,7 +880,6 @@ public class GoogleComputeProviderTest {
     Map<String, String> templateConfig = new HashMap<String, String>();
     templateConfig.put(IMAGE.unwrap().getConfigKey(), IMAGE_ALIAS_RHEL);
     templateConfig.put(TYPE.unwrap().getConfigKey(), MACHINE_TYPE_NAME);
-    templateConfig.put(NETWORK_NAME.unwrap().getConfigKey(), NETWORK_NAME_VALUE);
     templateConfig.put(ZONE.unwrap().getConfigKey(), ZONE_NAME);
 
     // Create the resource template.

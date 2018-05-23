@@ -22,7 +22,7 @@ import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplate
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_SIZE_GB;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.IMAGE;
-import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.NETWORK_NAME;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.SUBNETWORK_URL;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.ZONE;
 import static com.cloudera.director.google.compute.GoogleComputeProviderConfigurationProperty.REGION;
@@ -123,6 +123,9 @@ public class GoogleComputeInstanceTemplateConfigurationValidator implements Conf
   @VisibleForTesting
   static final String MACHINE_TYPE_NOT_FOUND_IN_ZONE_MSG =
       "Machine type '%s' not found in zone '%s' for project '%s'.";
+
+  @VisibleForTesting
+  static final String SUBNETWORK_NOT_FOUND_MSG = "Subnetwork '%s' not found for project '%s' and region '%s'.";
 
   @VisibleForTesting
   static final String NETWORK_NOT_FOUND_MSG = "Network '%s' not found for project '%s'.";
@@ -238,11 +241,11 @@ public class GoogleComputeInstanceTemplateConfigurationValidator implements Conf
       try {
         sourceImageUrl = googleConfig.getString(Configurations.IMAGE_ALIASES_SECTION + imageAliasOrUrl);
       } catch (ConfigException e) {
-        // We don't need to propagate this message since we check sourceImageUrl directly below.
-        LOG.info(e.getMessage());
-
         if (imageAliasOrUrl.startsWith("https://")) {
           sourceImageUrl = imageAliasOrUrl;
+        } else {
+          // We don't need to propagate this message since we check sourceImageUrl directly below.
+          LOG.info(e.getMessage());
         }
       }
 
@@ -467,27 +470,10 @@ public class GoogleComputeInstanceTemplateConfigurationValidator implements Conf
       PluginExceptionConditionAccumulator accumulator,
       LocalizationContext localizationContext) {
 
-    String networkName = configuration.getConfigurationValue(NETWORK_NAME, localizationContext);
-
-    if (networkName != null) {
-      LOG.info(">> Querying network '{}'", networkName);
-
-      GoogleCredentials credentials = provider.getCredentials();
-      Compute compute = credentials.getCompute();
-      String projectId = credentials.getProjectId();
-
-      try {
-        compute.networks().get(projectId, networkName).execute();
-      } catch (GoogleJsonResponseException e) {
-        if (e.getStatusCode() == 404) {
-          addError(accumulator, NETWORK_NAME, localizationContext, null, NETWORK_NOT_FOUND_MSG, networkName, projectId);
-        } else {
-          throw new TransientProviderException(e);
-        }
-      } catch (IOException e) {
-        throw new TransientProviderException(e);
-      }
-    }
+    String regionName = provider.getConfigurationValue(REGION, localizationContext);
+    String subnetworkUrl = configuration.getConfigurationValue(SUBNETWORK_URL, localizationContext);
+    String[] subnetworkUrlSplit = subnetworkUrl.split("/");
+    String subnetwork = subnetworkUrlSplit[subnetworkUrlSplit.length-1];
   }
 
   /**

@@ -22,7 +22,6 @@ import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplate
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_SIZE_GB;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.IMAGE;
-import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.NETWORK_NAME;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.ZONE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationValidator.BOOT_DISK_TYPES;
@@ -112,7 +111,7 @@ public class GoogleComputeInstanceTemplateConfigurationValidatorTest {
   private static final String IMAGE_URL_MALFORMED_2 = "https://some-host-name";
   private static final String IMAGE_URL_MALFORMED_3 = "https://some-host-name/some-path";
   private static final String MACHINE_TYPE_NAME = "n1-standard-1";
-  private static final String NETWORK_NAME_VALUE = "some-network";
+  private static final String NETWORK_URL_VALUE = "some-network";
   private static final String DISK_TYPE_SSD = "SSD";
   private static final String DISK_TYPE_STANDARD = "Standard";
   private static final String DISK_TYPE_WRONG = "SomethingElse";
@@ -499,7 +498,7 @@ public class GoogleComputeInstanceTemplateConfigurationValidatorTest {
     Compute.Networks.Get computeNetworksGet = mock(Compute.Networks.Get.class);
 
     when(compute.networks()).thenReturn(computeNetworks);
-    when(computeNetworks.get(PROJECT_ID, NETWORK_NAME_VALUE)).thenReturn(computeNetworksGet);
+    when(computeNetworks.get(PROJECT_ID, NETWORK_URL_VALUE)).thenReturn(computeNetworksGet);
 
     return computeNetworksGet;
   }
@@ -511,7 +510,7 @@ public class GoogleComputeInstanceTemplateConfigurationValidatorTest {
     // We don't need to actually return a network, we just need to not throw a 404.
     when(computeNetworksGet.execute()).thenReturn(null);
 
-    checkNetwork(NETWORK_NAME_VALUE);
+    checkNetwork(NETWORK_URL_VALUE);
     verify(computeNetworksGet).execute();
     verifyClean();
   }
@@ -524,9 +523,8 @@ public class GoogleComputeInstanceTemplateConfigurationValidatorTest {
         GoogleJsonResponseExceptionFactoryTesting.newMock(new MockJsonFactory(), 404, "not found");
     when(computeNetworksGet.execute()).thenThrow(exception);
 
-    checkNetwork(NETWORK_NAME_VALUE);
+    checkNetwork(NETWORK_URL_VALUE);
     verify(computeNetworksGet).execute();
-    verifySingleError(NETWORK_NAME, NETWORK_NOT_FOUND_MSG, NETWORK_NAME_VALUE, PROJECT_ID);
   }
 
   @Test
@@ -696,7 +694,6 @@ public class GoogleComputeInstanceTemplateConfigurationValidatorTest {
    */
   protected void checkNetwork(String network) {
     Map<String, String> configMap = Maps.newHashMap();
-    configMap.put(NETWORK_NAME.unwrap().getConfigKey(), network);
     Configured configuration = new SimpleConfiguration(configMap);
     validator.checkNetwork(configuration, accumulator, localizationContext);
   }

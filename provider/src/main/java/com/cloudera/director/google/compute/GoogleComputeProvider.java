@@ -16,14 +16,24 @@
 
 package com.cloudera.director.google.compute;
 
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.ASSOCIATE_PUBLIC_IP;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.BOOT_DISK_SIZE_GB;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.BOOT_DISK_TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_COUNT;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_SIZE_GB;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.DATA_DISK_TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.IMAGE;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.IMAGE_FAMILY;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.IMAGE_PROJECT_ID;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.LOCAL_SSD_INTERFACE_TYPE;
-import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.NETWORK_NAME;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.MIN_CPU_PLATFORM;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.NETWORK_TAGS;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.PRIVATE_DNS_MANAGED_ZONE;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.PRIVATE_DNS_RECORD_NAME;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.PUBLIC_DNS_MANAGED_ZONE;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.PUBLIC_DNS_RECORD_NAME;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.SERVICE_ACCOUNT_EMAIL;
+import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.SUBNETWORK_URL;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.TYPE;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.USE_PREEMPTIBLE_INSTANCES;
 import static com.cloudera.director.google.compute.GoogleComputeInstanceTemplateConfigurationProperty.ZONE;
@@ -33,7 +43,6 @@ import static com.cloudera.director.spi.v1.model.InstanceTemplate.InstanceTempla
 
 import com.cloudera.director.google.Configurations;
 import com.cloudera.director.google.compute.util.ComputeUrls;
-import com.cloudera.director.google.util.Names;
 import com.cloudera.director.google.util.Urls;
 import com.cloudera.director.google.internal.GoogleCredentials;
 import com.cloudera.director.spi.v1.compute.util.AbstractComputeInstance;
@@ -69,10 +78,19 @@ import com.google.api.services.compute.model.Metadata;
 import com.google.api.services.compute.model.NetworkInterface;
 import com.google.api.services.compute.model.Operation;
 import com.google.api.services.compute.model.Scheduling;
+import com.google.api.services.compute.model.ServiceAccount;
 import com.google.api.services.compute.model.Tags;
+import com.google.api.services.dns.Dns;
+import com.google.api.services.dns.model.Change;
+import com.google.api.services.dns.model.ManagedZone;
+import com.google.api.services.dns.model.ResourceRecordSet;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.hash.Hashing;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigException;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,7 +110,7 @@ public class GoogleComputeProvider
 
   private static final Logger LOG = LoggerFactory.getLogger(GoogleComputeProvider.class);
 
-  private static final List<String> DONE_STATE = Arrays.asList("DONE");
+  private static final List<String> DONE_STATE = Collections.singletonList("DONE");
   private static final List<String> RUNNING_OR_DONE_STATES = Arrays.asList("RUNNING", "DONE");
 
   protected static final List<ConfigurationProperty> CONFIGURATION_PROPERTIES =
@@ -136,7 +154,6 @@ public class GoogleComputeProvider
 
     try {
       compute.zones().list(projectId).execute();
-
     } catch (GoogleJsonResponseException e) {
       if (e.getStatusCode() == 404) {
         throw new InvalidCredentialsException(
@@ -186,6 +203,7 @@ public class GoogleComputeProvider
 
     Compute compute = credentials.getCompute();
     String projectId = credentials.getProjectId();
+    String templateName = template.getName();
 
     // Use this list to collect successful disk creation operations in case we need to tear everything down.
     List<Operation> successfulDiskCreationOperations = new ArrayList<Operation>();
@@ -193,9 +211,10 @@ public class GoogleComputeProvider
     // Use this list to collect the operations that must reach a RUNNING or DONE state prior to allocate() returning.
     List<Operation> vmCreationOperations = new ArrayList<Operation>();
 
+    String zone = template.getConfigurationValue(ZONE, templateLocalizationContext);
+
     int preExistingVmCount = 0;
     for (String instanceId : instanceIds) {
-      String zone = template.getConfigurationValue(ZONE, templateLocalizationContext);
       String decoratedInstanceName = decorateInstanceName(template, instanceId, templateLocalizationContext);
 
       // Resolve the source image.
@@ -207,6 +226,17 @@ public class GoogleComputeProvider
         sourceImageUrl = googleConfig.getString(Configurations.IMAGE_ALIASES_SECTION + imageAliasOrUrl);
       } catch (ConfigException e) {
         sourceImageUrl = imageAliasOrUrl;
+      }
+
+      String imageProjectId = template.getConfigurationValue(IMAGE_PROJECT_ID, templateLocalizationContext);
+      String imageFamily = template.getConfigurationValue(IMAGE_FAMILY, templateLocalizationContext);
+
+      if (!imageFamily.isEmpty() && !imageProjectId.isEmpty()) {
+        try {
+          sourceImageUrl = compute.images().getFromFamily(imageProjectId, imageFamily).execute().getSelfLink();
+        } catch (IOException e) {
+          accumulator.addError(null, e.getMessage());
+        }
       }
 
       // Compose attached disks.
@@ -271,7 +301,6 @@ public class GoogleComputeProvider
           try {
             // This is an async operation. We must poll until it completes to confirm the disk exists.
             Operation diskCreationOperation = compute.disks().insert(projectId, zone, persistentDisk).execute();
-
             diskCreationOperations.add(diskCreationOperation);
           } catch (GoogleJsonResponseException e) {
             if (e.getStatusCode() == 409) {
@@ -294,19 +323,25 @@ public class GoogleComputeProvider
         attachedDiskList.add(attachedDisk);
       }
 
-      // Compose the network url.
-      String networkName = template.getConfigurationValue(NETWORK_NAME, templateLocalizationContext);
-      String networkUrl = ComputeUrls.buildNetworkUrl(projectId, networkName);
+      // Compose the subnetwork url.
+      String subnetwork = template.getConfigurationValue(SUBNETWORK_URL, templateLocalizationContext);
 
       // Compose the network interface.
-      String accessConfigName = "External NAT";
-      final String accessConfigType = "ONE_TO_ONE_NAT";
-      AccessConfig accessConfig = new AccessConfig();
-      accessConfig.setName(accessConfigName);
-      accessConfig.setType(accessConfigType);
       NetworkInterface networkInterface = new NetworkInterface();
-      networkInterface.setNetwork(networkUrl);
-      networkInterface.setAccessConfigs(Arrays.asList(accessConfig));
+      networkInterface.setSubnetwork(subnetwork);
+
+      // Check if access config should be set.
+      boolean associatePublicIp =
+          Boolean.parseBoolean(template.getConfigurationValue(ASSOCIATE_PUBLIC_IP, templateLocalizationContext));
+
+      if (associatePublicIp) {
+        String accessConfigName = "External NAT";
+        final String accessConfigType = "ONE_TO_ONE_NAT";
+        AccessConfig accessConfig = new AccessConfig();
+        accessConfig.setName(accessConfigName);
+        accessConfig.setType(accessConfigType);
+        networkInterface.setAccessConfigs(Collections.singletonList(accessConfig));
+      }
 
       // Compose the machine type url.
       String machineTypeName = template.getConfigurationValue(TYPE, templateLocalizationContext);
@@ -330,10 +365,6 @@ public class GoogleComputeProvider
             decoratedInstanceName);
       }
 
-      for (Map.Entry<String, String> tag : template.getTags().entrySet()) {
-        metadataItemsList.add(new Metadata.Items().setKey(tag.getKey()).setValue(tag.getValue()));
-      }
-
       Metadata metadata = new Metadata().setItems(metadataItemsList);
 
       boolean usePreemptibleInstances =
@@ -347,16 +378,39 @@ public class GoogleComputeProvider
       instance.setName(decoratedInstanceName);
       instance.setMachineType(machineTypeUrl);
       instance.setDisks(attachedDiskList);
-      instance.setNetworkInterfaces(Arrays.asList(networkInterface));
+      instance.setNetworkInterfaces(Collections.singletonList(networkInterface));
       instance.setScheduling(scheduling);
 
-      // Compose the tags for the instance, including a tag identifying the plugin and version used to create it.
-      // This is not the same as the template 'tags' which are propagated as instance metadata.
+      // Set min cpu platform, if any.
+      String minCpuPlatform = template.getConfigurationValue(MIN_CPU_PLATFORM, templateLocalizationContext);
+      if (minCpuPlatform.length() > 0) {
+        instance.setMinCpuPlatform(minCpuPlatform);
+      }
+
+      // Set labels.
+      Map<String, String> labels = Maps.newHashMap();
+      Map<String, String> templateTags = template.getTags();
+      for (String key : templateTags.keySet()) {
+        String value = templateTags.get(key);
+        labels.put(
+            key.toLowerCase().replaceAll("\\s+", "-"),
+            value.toLowerCase().replaceAll("\\s+", "-")
+        );
+      }
+
+      labels.put("cloudera-director-template-name", templateName);
+      instance.setLabels(labels);
+
+      // Set service accounts and scopes.
+      String serviceAccountEmail = template.getConfigurationValue(SERVICE_ACCOUNT_EMAIL, templateLocalizationContext);
+      ServiceAccount serviceAccount = new ServiceAccount();
+      serviceAccount.setEmail(serviceAccountEmail);
+      instance.setServiceAccounts(Collections.singletonList(serviceAccount));
+
+      // Compose the network tags for the instance.
       Tags tags = new Tags();
-      String applicationNameVersionTag = Names.buildApplicationNameVersionTag(applicationProperties);
-      // Massage it into a form acceptable for use as a tag (only allows lowercase letters, numbers and hyphens).
-      applicationNameVersionTag = applicationNameVersionTag.toLowerCase().replaceAll("\\.|/", "-");
-      tags.setItems(Lists.newArrayList(applicationNameVersionTag));
+      String networkTags = template.getConfigurationValue(NETWORK_TAGS, templateLocalizationContext);
+      tags.setItems(Arrays.asList(networkTags.split(",")));
       instance.setTags(tags);
 
       // Wait for operations to reach DONE state before provisioning the instance.
@@ -364,23 +418,18 @@ public class GoogleComputeProvider
           compute, googleConfig, accumulator);
 
       // We need to ensure that any data disks that were successfully created are deleted in case of teardown.
-      for (Operation successfulOperation : successfulOperations) {
-        successfulDiskCreationOperations.add(successfulOperation);
-      }
+      successfulDiskCreationOperations.addAll(successfulOperations);
 
       if (dataDisksAreLocalSSD || preExistingPersistentDiskCount + successfulOperations.size() == dataDiskCount) {
         try {
           Operation vmCreationOperation = compute.instances().insert(projectId, zone, instance).execute();
-
           vmCreationOperations.add(vmCreationOperation);
-        }
-        catch (GoogleJsonResponseException e) {
+        } catch (GoogleJsonResponseException e) {
           if (hasError(e, 409, "alreadyExists")) {
             preExistingVmCount++;
           }
           accumulator.addError(null, e.getMessage());
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
           accumulator.addError(null, e.getMessage());
         }
       }
@@ -426,6 +475,28 @@ public class GoogleComputeProvider
           }
         }
       }
+    }
+
+    // After instances are all up, create DNS record, if enabled.
+    try {
+      String privateDnsManagedZone = template.getConfigurationValue(PRIVATE_DNS_MANAGED_ZONE, templateLocalizationContext);
+
+      if (!privateDnsManagedZone.isEmpty()) {
+        List<String> privateIPs = getInstancesPrivateIPs(template, instanceIds, templateLocalizationContext);
+        executeChangeDnsRecord(template, privateDnsManagedZone, privateIPs, PRIVATE_DNS_RECORD_NAME, templateLocalizationContext);
+      }
+
+      String publicDnsManagedZone = template.getConfigurationValue(PUBLIC_DNS_MANAGED_ZONE, templateLocalizationContext);
+      if (!publicDnsManagedZone.isEmpty()) {
+        List<String> publicIPs = getInstancesPublicIPs(template, instanceIds, templateLocalizationContext);
+        executeChangeDnsRecord(template, privateDnsManagedZone, publicIPs, PUBLIC_DNS_RECORD_NAME, templateLocalizationContext);
+      }
+
+    } catch (IOException e) {
+      LOG.error(e.getMessage());
+      accumulator.addError(null, e.getMessage());
+      PluginExceptionDetails pluginExceptionDetails = new PluginExceptionDetails(accumulator.getConditionsByKey());
+      throw new UnrecoverableProviderException("Problem creating DNS Records:", pluginExceptionDetails);
     }
   }
 
@@ -663,6 +734,32 @@ public class GoogleComputeProvider
     Compute compute = credentials.getCompute();
     String projectId = credentials.getProjectId();
 
+    // If the instances are associated with a DNS record, remove the instances from the record
+    // before proceeding to deleting them.
+    try {
+      String privateDnsManagedZone = template.getConfigurationValue(PRIVATE_DNS_MANAGED_ZONE, templateLocalizationContext);
+
+      if (!privateDnsManagedZone.isEmpty()) {
+        List<String> privateIPs = getInstancesPrivateIPs(template, instanceIds, templateLocalizationContext);
+        executeDeleteDnsRecords(template, privateDnsManagedZone, privateIPs, PRIVATE_DNS_RECORD_NAME, templateLocalizationContext);
+      }
+
+      String publicDnsManagedZone = template.getConfigurationValue(PUBLIC_DNS_MANAGED_ZONE, templateLocalizationContext);
+      if (!publicDnsManagedZone.isEmpty()) {
+        List<String> publicIPs = getInstancesPublicIPs(template, instanceIds, templateLocalizationContext);
+        executeDeleteDnsRecords(template, privateDnsManagedZone, publicIPs, PUBLIC_DNS_RECORD_NAME, templateLocalizationContext);
+      }
+
+    } catch (GoogleJsonResponseException e) {
+      if (e.getStatusCode() == 404) {
+        // Ignore if it doesn't exist.
+      } else {
+        accumulator.addError(null, e.getMessage());
+      }
+    } catch (IOException e) {
+      accumulator.addError(null, e.getMessage());
+    }
+
     // Use this list to collect the operations that must reach a RUNNING or DONE state prior to delete() returning.
     List<Operation> vmDeletionOperations = new ArrayList<Operation>();
 
@@ -705,9 +802,174 @@ public class GoogleComputeProvider
     return googleConfig;
   }
 
+  private static String getDnsName(GoogleComputeInstanceTemplate template, Dns dns,
+      String projectId, String dnsManagedZone, GoogleComputeInstanceTemplateConfigurationProperty customDnsToken,
+      LocalizationContext templateLocalizationContext) throws IOException {
+
+    ManagedZone managedZone = dns.managedZones().get(projectId, dnsManagedZone).execute();
+    String zoneDnsSuffix = "." + managedZone.getDnsName();
+
+    String customDnsName = template.getConfigurationValue(customDnsToken, templateLocalizationContext);
+
+    if (customDnsName.isEmpty()) {
+      return template.getName() + "-"
+          + template.getConfigurationValue(INSTANCE_NAME_PREFIX, templateLocalizationContext)
+          + zoneDnsSuffix;
+    }
+
+    if (!customDnsName.endsWith(zoneDnsSuffix)) {
+      return customDnsName + zoneDnsSuffix;
+    }
+
+    return customDnsName;
+  }
+
+  private void executeChangeDnsRecord(GoogleComputeInstanceTemplate template, String dnsManagedZone,
+      List<String> networkIps, GoogleComputeInstanceTemplateConfigurationProperty customDnsToken,
+      LocalizationContext templateLocalizationContext)
+      throws IOException {
+
+    Dns dns = credentials.getDNS();
+    String projectId = credentials.getProjectId();
+    String dnsName = getDnsName(template, dns, projectId, dnsManagedZone, customDnsToken, templateLocalizationContext);
+
+    // Create the dns change request.
+    Change change = new Change();
+    change.setKind("dns#change");
+
+    // Check if name exists
+    ResourceRecordSet existingRecord = null;
+    try {
+      List<ResourceRecordSet> response = dns.resourceRecordSets()
+          .list(projectId, dnsManagedZone).setName(dnsName).execute().getRrsets();
+
+      // Only a single record can be returned from the filtered search.
+      if (response.size() > 0) {
+        existingRecord = response.get(0);
+      }
+    } catch (GoogleJsonResponseException e) {
+      if (e.getStatusCode() == 404) {
+        // Ignore if it doesn't exist.
+      } else {
+        throw e;
+      }
+    }
+
+    // Create record.
+    ResourceRecordSet resourceRecordSet = new ResourceRecordSet();
+    resourceRecordSet.setKind("dns#resourceRecordSet");
+    resourceRecordSet.setTtl(60);
+    resourceRecordSet.setType("A");
+    resourceRecordSet.setName(dnsName);
+
+    // Add deletion if existing record exists.
+    if (existingRecord != null) {
+      change.setDeletions(Collections.singletonList(existingRecord));
+
+      // Add old network IPs to the newly allocated instances.
+      networkIps.addAll(existingRecord.getRrdatas());
+    }
+
+    // Add the record to additions.
+    resourceRecordSet.setRrdatas(networkIps);
+    change.setAdditions(Collections.singletonList(resourceRecordSet));
+
+    // Execute request.
+    LOG.info("executing dns change for dnsManageZone '{}': {}", dnsManagedZone, change.toPrettyString());
+    Change response =  dns.changes().create(projectId, dnsManagedZone, change).execute();
+    LOG.info("response received dns change for dnsManageZone '{}': ", response.toPrettyString());
+  }
+
+  private void executeDeleteDnsRecords(GoogleComputeInstanceTemplate template, String dnsManagedZone,
+      List<String> networkIps, GoogleComputeInstanceTemplateConfigurationProperty customDnsToken,
+      LocalizationContext templateLocalizationContext)
+      throws IOException {
+
+    Dns dns = credentials.getDNS();
+    String projectId = credentials.getProjectId();
+    String dnsName = getDnsName(template, dns, projectId, dnsManagedZone, customDnsToken, templateLocalizationContext);
+
+    Change change = new Change();
+    change.setKind("dns#change");
+
+    // Check if name exists
+    List<ResourceRecordSet> recordSetList = dns.resourceRecordSets()
+        .list(projectId, dnsManagedZone).setName(dnsName).execute().getRrsets();
+
+    // Only a single record can be returned from the filtered search.
+    if (recordSetList.size() > 0) {
+      ResourceRecordSet existingRecord = recordSetList.get(0);
+
+      // In case the IPs to be deleted are less than the current record IPs,
+      // then modify the record instead of deleting it.
+      if (networkIps.size() < existingRecord.getRrdatas().size()) {
+        ResourceRecordSet newRecord = existingRecord.clone();
+        newRecord.getRrdatas().removeAll(networkIps);
+        change.setAdditions(Collections.singletonList(newRecord));
+      }
+
+      change.setDeletions(Collections.singletonList(existingRecord));
+
+      // Execute request.
+      LOG.info("executing dns change for dnsManageZone '{}': {}", dnsManagedZone, change.toPrettyString());
+      Change response =  dns.changes().create(projectId, dnsManagedZone, change).execute();
+      LOG.info("response received dns change for dnsManageZone '{}': ", response.toPrettyString());
+    }
+  }
+
+  private List<String> getInstancesPrivateIPs(GoogleComputeInstanceTemplate template, Collection<String> instanceIds,
+      LocalizationContext templateLocalizationContext) throws IOException {
+
+    Compute compute = credentials.getCompute();
+    String projectId = credentials.getProjectId();
+    String zone = template.getConfigurationValue(ZONE, templateLocalizationContext);
+
+    List<String> networkIPs = Lists.newArrayList();
+    for (String instanceId : instanceIds) {
+      String decoratedInstanceName = decorateInstanceName(template, instanceId, templateLocalizationContext);
+      Instance instance = compute.instances().get(projectId, zone, decoratedInstanceName).execute();
+
+      List<NetworkInterface> networkInterfaces = instance.getNetworkInterfaces();
+      if (networkInterfaces.size() > 0) {
+        networkIPs.add(networkInterfaces.get(0).getNetworkIP());
+      }
+    }
+
+    return networkIPs;
+  }
+
+  private List<String> getInstancesPublicIPs(GoogleComputeInstanceTemplate template, Collection<String> instanceIds,
+      LocalizationContext templateLocalizationContext) throws IOException {
+
+    Compute compute = credentials.getCompute();
+    String projectId = credentials.getProjectId();
+    String zone = template.getConfigurationValue(ZONE, templateLocalizationContext);
+
+    List<String> networkIPs = Lists.newArrayList();
+    for (String instanceId : instanceIds) {
+      String decoratedInstanceName = decorateInstanceName(template, instanceId, templateLocalizationContext);
+      Instance instance = compute.instances().get(projectId, zone, decoratedInstanceName).execute();
+
+      List<NetworkInterface> networkInterfaces = instance.getNetworkInterfaces();
+      if (networkInterfaces.size() > 0) {
+        List<AccessConfig> accessConfigs =  networkInterfaces.get(0).getAccessConfigs();
+        if (accessConfigs.size() > 0) {
+          networkIPs.add(accessConfigs.get(0).getNatIP());
+        }
+      }
+    }
+
+    return networkIPs;
+  }
+
   private static String decorateInstanceName(GoogleComputeInstanceTemplate template, String currentId,
       LocalizationContext templateLocalizationContext) {
-    return template.getConfigurationValue(INSTANCE_NAME_PREFIX, templateLocalizationContext) + "-" + currentId;
+
+    String hashedId = Hashing.sha256().hashString(currentId, StandardCharsets.UTF_8).toString().substring(0, 10);
+    return
+        template.getConfigurationValue(INSTANCE_NAME_PREFIX, templateLocalizationContext) + "-"
+            + template.getName() + "-"
+            + hashedId;
   }
 
   private static InstanceStatus convertGCEInstanceStatusToDirectorInstanceStatus(String gceInstanceStatus) {

@@ -30,11 +30,26 @@ public enum GoogleComputeInstanceTemplateConfigurationProperty implements Config
   IMAGE(new SimpleConfigurationPropertyBuilder()
       .configKey(ComputeInstanceTemplateConfigurationPropertyToken.IMAGE.unwrap().getConfigKey())
       .name("Image Alias or URL")
-      .addValidValues("centos6", "rhel6")
       .defaultDescription("The image alias from plugin configuration or a full image URL.")
       .defaultErrorMessage("Image alias or URL is mandatory")
       .widget(ConfigurationProperty.Widget.OPENLIST)
-      .required(true)
+      .required(false)
+      .build()),
+
+  IMAGE_PROJECT_ID(new SimpleConfigurationPropertyBuilder()
+      .configKey("imageProjectId")
+      .name("Image ProjectId")
+      .defaultDescription("The project id associated with the instance family.")
+      .widget(ConfigurationProperty.Widget.OPENLIST)
+      .required(false)
+      .build()),
+
+  IMAGE_FAMILY(new SimpleConfigurationPropertyBuilder()
+      .configKey("imageFamily")
+      .name("Image Family")
+      .defaultDescription("The image family to get the latest image from.")
+      .widget(ConfigurationProperty.Widget.OPENLIST)
+      .required(false)
       .build()),
 
   TYPE(new SimpleConfigurationPropertyBuilder()
@@ -42,9 +57,10 @@ public enum GoogleComputeInstanceTemplateConfigurationProperty implements Config
       .name("Machine Type")
       .addValidValues(
           "f1-micro", "g1-small",
-          "n1-standard-1", "n1-standard-2", "n1-standard-4", "n1-standard-8", "n1-standard-16", "n1-standard-32",
-          "n1-highcpu-2", "n1-highcpu-4", "n1-highcpu-8", "n1-highcpu-16", "n1-highcpu-32",
-          "n1-highmem-2", "n1-highmem-4", "n1-highmem-8", "n1-highmem-16", "n1-highmem-32")
+          "n1-standard-1", "n1-standard-2", "n1-standard-4", "n1-standard-8",
+          "n1-standard-16", "n1-standard-32", "n1-standard-64", "n1-standard-96",
+          "n1-highmem-2", "n1-highmem-4", "n1-highmem-8", "n1-highmem-16", "n1-highmem-32", "n1-highmem-64", "n1-highmem-96",
+          "n1-highcpu-2", "n1-highcpu-4", "n1-highcpu-8", "n1-highcpu-16", "n1-highcpu-32", "n1-highcpu-64", "n1-highcpu-96")
       .defaultDescription(
           "The machine type.<br />" +
           "<a target='_blank' href='https://cloud.google.com/compute/docs/machine-types'>More Information</a>")
@@ -53,14 +69,69 @@ public enum GoogleComputeInstanceTemplateConfigurationProperty implements Config
       .required(true)
       .build()),
 
-  NETWORK_NAME(new SimpleConfigurationPropertyBuilder()
-      .configKey("networkName")
-      .name("Network Name")
-      .defaultDescription(
-          "The network identifier.<br />" +
-          "<a target='_blank' href='https://cloud.google.com/compute/docs/networking#networks'>More Information</a>")
-      .defaultValue("default")
+  PRIVATE_DNS_MANAGED_ZONE(new SimpleConfigurationPropertyBuilder()
+      .configKey("privateDnsManagedZone")
+      .name("DNS Managed Zone")
+      .defaultDescription("")
+      .defaultValue("")
       .required(false)
+      .build()),
+
+  PRIVATE_DNS_RECORD_NAME(new SimpleConfigurationPropertyBuilder()
+      .configKey("privateDnsRecordName")
+      .name("DNS Managed Zone")
+      .defaultDescription("")
+      .defaultValue("")
+      .required(false)
+      .build()),
+
+  PUBLIC_DNS_MANAGED_ZONE(new SimpleConfigurationPropertyBuilder()
+      .configKey("publicDnsManagedZone")
+      .name("DNS Managed Zone")
+      .defaultDescription("")
+      .defaultValue("")
+      .required(false)
+      .build()),
+
+  PUBLIC_DNS_RECORD_NAME(new SimpleConfigurationPropertyBuilder()
+      .configKey("publicDnsRecordName")
+      .name("DNS Managed Zone")
+      .defaultDescription("")
+      .defaultValue("")
+      .required(false)
+      .build()),
+
+  MIN_CPU_PLATFORM(new SimpleConfigurationPropertyBuilder()
+      .configKey("minCpuPlatform")
+      .name("Machine Minimum Cpu Platform")
+      .addValidValues(
+          "Intel Sandy Bridge", "Intel Ivy Bridge", "Intel Haswell",
+          "Intel Broadwell", "Intel Skylake"
+      )
+      .defaultValue("")
+      .defaultDescription("")
+      .required(false)
+      .build()),
+
+  SERVICE_ACCOUNT_EMAIL(new SimpleConfigurationPropertyBuilder()
+      .configKey("serviceAccountEmail")
+      .name("Service Account Scopes")
+      .defaultDescription("")
+      .required(false)
+      .build()),
+
+  NETWORK_TAGS(new SimpleConfigurationPropertyBuilder()
+      .configKey("networkTags")
+      .name("Network Tags")
+      .defaultDescription("")
+      .required(false)
+      .build()),
+
+  SUBNETWORK_URL(new SimpleConfigurationPropertyBuilder()
+      .configKey("subnetworkUrl")
+      .name("Subnetwork Name")
+      .defaultDescription("The subnetwork identifier.")
+      .required(true)
       .build()),
 
   ZONE(new SimpleConfigurationPropertyBuilder()
@@ -100,7 +171,7 @@ public enum GoogleComputeInstanceTemplateConfigurationProperty implements Config
       .configKey("dataDiskCount")
       .name("Data Disk Count")
       .defaultDescription("The number of data disks to create.")
-      .defaultValue("2")
+      .defaultValue("0")
       .type(Property.Type.INTEGER)
       .widget(ConfigurationProperty.Widget.NUMBER)
       .required(false)
@@ -153,6 +224,16 @@ public enum GoogleComputeInstanceTemplateConfigurationProperty implements Config
               "they should be used only for workers, and not for nodes that must be reliable, " +
               "such as masters and data nodes.<br />" +
               "<a target='_blank' href='https://cloud.google.com/compute/docs/instances/preemptible/'>More Information</a>")
+      .defaultValue("false")
+      .type(Property.Type.BOOLEAN)
+      .widget(ConfigurationProperty.Widget.CHECKBOX)
+      .required(false)
+      .build()),
+
+  ASSOCIATE_PUBLIC_IP(new SimpleConfigurationPropertyBuilder()
+      .configKey("associatePublicIp")
+      .name("Associate Public IP")
+      .defaultDescription("")
       .defaultValue("false")
       .type(Property.Type.BOOLEAN)
       .widget(ConfigurationProperty.Widget.CHECKBOX)

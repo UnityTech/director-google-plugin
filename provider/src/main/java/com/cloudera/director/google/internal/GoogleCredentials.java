@@ -24,11 +24,14 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.services.compute.Compute;
 import com.google.api.services.compute.ComputeScopes;
+import com.google.api.services.dns.Dns;
+import com.google.api.services.dns.DnsScopes;
 import com.google.api.services.sqladmin.SQLAdmin;
 import com.google.api.services.sqladmin.SQLAdminScopes;
 import com.typesafe.config.Config;
 
 import java.io.ByteArrayInputStream;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 
@@ -38,6 +41,7 @@ public class GoogleCredentials {
   private final String projectId;
   private final String jsonKey;
   private final Compute compute;
+  private final Dns dns;
   private final SQLAdmin sqlAdmin;
 
   public GoogleCredentials(Config applicationProperties, String projectId, String jsonKey) {
@@ -45,6 +49,7 @@ public class GoogleCredentials {
     this.projectId = projectId;
     this.jsonKey = jsonKey;
     this.compute = buildCompute();
+    this.dns = buildDns();
     this.sqlAdmin = buildSQLAdmin();
   }
 
@@ -108,6 +113,36 @@ public class GoogleCredentials {
     }
   }
 
+  private Dns buildDns() {
+    try {
+      JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
+      HttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+      GoogleCredential credential;
+
+      Collection<String> scopes =  Collections.singletonList(DnsScopes.NDEV_CLOUDDNS_READWRITE);
+
+      if (jsonKey != null) {
+        credential = GoogleCredential.fromStream(
+            new ByteArrayInputStream(jsonKey.getBytes()), httpTransport, JSON_FACTORY)
+            .createScoped(scopes);
+      } else {
+        credential = GoogleCredential
+            .getApplicationDefault(httpTransport, JSON_FACTORY)
+            .createScoped(scopes);
+      }
+
+      return new Dns.Builder(httpTransport,
+          JSON_FACTORY,
+          null)
+          .setApplicationName(Names.buildApplicationNameVersionTag(applicationProperties))
+          .setHttpRequestInitializer(credential)
+          .build();
+
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   public String getProjectId() {
     return projectId;
   }
@@ -122,6 +157,10 @@ public class GoogleCredentials {
 
   public SQLAdmin getSQLAdmin() {
     return sqlAdmin;
+  }
+
+  public Dns getDNS() {
+    return dns;
   }
 
   public boolean match(String projectId, String jsonKey) {
